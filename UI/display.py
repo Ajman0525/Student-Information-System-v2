@@ -2,11 +2,11 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QHBoxLayout, QTableWidget
 from PyQt5.QtGui import QIcon, QStandardItem, QStandardItemModel
 from PyQt5.QtCore import Qt
-from Database_Manager.database import connect_database
-import sys, csv, copy
+
+import sys, csv, copy, pymysql
 
 from Images import header_rc
-
+from Database_Manager.database import DatabaseManager
 from SearchBar.searchTab import SearchBar
 from Popups.AddStudent import AddStudent
 from Popups.AddProgram import AddProgram
@@ -48,7 +48,14 @@ class Display(object):
         self.label.setScaledContents(True)
         self.label.setObjectName("label")
         
+        #INITIALIZED CONNECTION TO DATABASE
+        #-------------------------------------------------
+        self.database = DatabaseManager()
 
+        # -------------------------------- #
+        #             BUTTONS              #
+        # -------------------------------- #    
+        
         # ADD BUTTON
         # ------------------------------------------------
         AddButton(self) 
@@ -62,7 +69,7 @@ class Display(object):
         # UPDATE BUTTON
         # ------------------------------------------------
         UpdateButton(self) 
-        self.updateButton.clicked.connect(lambda: self.updateCsv(self.getActiveCsvFile()))
+        self.updateButton.clicked.connect(lambda: self.updateCsv(self.getActiveTable()))
         self.updateButton.setVisible(False) 
         self.last_update_type = None
 
@@ -85,7 +92,7 @@ class Display(object):
                                         color: gray;
                                         font-family: "Fixedsys";
                                         font-size: 12px;""")
-        self.searchTab.textChanged.connect(self.searchCsv)
+        self.searchTab.textChanged.connect(self.searchContent)
         
 
                     
@@ -114,7 +121,7 @@ class Display(object):
         self.tableView.setFocusPolicy(Qt.NoFocus)
         self.tableView.selectionModel().selectionChanged.connect(self.highlight_selected_row) #Selected row is bolder in color
         self.layout = QtWidgets.QVBoxLayout(self.centralwidget)
-        
+
         # -------------------------------- #
         #         SORTING COLUMNS          #
         # -------------------------------- #   
@@ -128,6 +135,7 @@ class Display(object):
         
 
 
+        
 
 
         # -------------------------------- #
@@ -182,7 +190,7 @@ class Display(object):
         self.tabWidget.addTab(self.collegeTab, "")
         self.tableView.raise_()
         
-        
+      
         # -------------------------------- #
         #       SEARCH BAR COMBO BOX       #
         # -------------------------------- #  
@@ -231,10 +239,10 @@ class Display(object):
 
 
     '''=========================================================='''
-    '''|                CSV FILE MANIPULATIONS                  |'''
+    '''|                   DATABASE MANAGEMENT                   '''
     '''=========================================================='''
 
-    # DELETING ROWS FROM TABS
+    # DELETING ROWS FROM TABS  (UNRESOLVED)
     # ----------------------------------------------------------------
     def removeData(self):
         selected_tab = self.tabWidget.currentIndex()
@@ -316,7 +324,7 @@ class Display(object):
 
     
 
-    # SAVING CSV CHANGES
+    # SAVING CSV CHANGES (UNRESOLVED)
     # ----------------------------------------------------------------
     def updateCsv(self, file_name):
         
@@ -351,55 +359,93 @@ class Display(object):
         self.updateButton.setVisible(False)  # ✅ Hide update button after saving
         self.last_update_type = None  # ✅ Reset update type
 
-        
-    def getActiveCsvFile(self):
+    
+    def getActiveTable(self):
         if self.tabWidget.currentIndex() == 0:
-            return "CSV Files/SSIS - STUDENT.csv"
+            return "studenttable"
         elif self.tabWidget.currentIndex() == 1:
-            return "CSV Files/SSIS - PROGRAM.csv"
+            return "programtable"
         elif self.tabWidget.currentIndex() == 2:
-            return "CSV Files/SSIS - COLLEGE.csv"
+            return "collegetable"
         return None
 
-                                                #########################################################
-                                                #                     SEARCH BAR                        #
-                                                #########################################################  
-    def searchCsv(self):
+    '''=========================================================='''
+    '''|                       SEARCHBAR                        |''' 
+    '''==========================================================''' 
+    def searchContent(self):
         search_text = self.searchTab.text().strip().lower()  # Get the text from search bar
         selected_column = self.searchComboBox.currentText()
-        
+        table_name = self.getActiveTable()
+        self.database.connect_database()
+        cursor = self.database.cursor
+        conn = self.database.connection
+
+        if not table_name:
+            print("Error: No table selected")
+            return
 
         if not search_text or selected_column == "Search By:":
-            file_name = self.getActiveCsvFile()
-            if file_name:
-                self.displayCsv(file_name)
+            if table_name:
+                self.displayDatabase(table_name)
             return
         
-        file_name = self.getActiveCsvFile()
-        column_index = self.getColumnIndex(selected_column) 
+        column_mapping = {
+                "studenttable": {     
+                    "Student ID": "studentId",
+                    "First Name": "firstName", 
+                    "Last Name": "lastName", 
+                    "Year Level": "yearLevel", 
+                    "Gender": "gender", 
+                    "Program Code": "programCode"
+                },
+                
+                "programtable": {
+                    "Program Code": "programCode",
+                    "Program Name": "programName",
+                    "College Code": "collegeCode"
+                },
 
-        if column_index is None:
-            return
+                "collegetable": {
+                    "College Code": "collegeCode",
+                    "College Name": "collegeName"
+                }
+            }
 
-        self.model.clear()
+        try:   
+            cursor.execute(f"SHOW COLUMNS FROM `{table_name}`")
+            headers = [column[0] for column in cursor.fetchall()]
+            self.model.clear()
+            display_headers = self.getCustomHeaders(table_name, headers)
+            self.model.setHorizontalHeaderLabels(display_headers)
             
-        try:
-            with open(file_name, "r", encoding="utf-8") as fileInput:
-                reader = csv.reader(fileInput)
-                headers = next(reader, None)  # Read the header row
-                if headers:
-                    self.model.setHorizontalHeaderLabels(headers)
+            column_map = column_mapping.get(table_name, {})
+            database_column  = column_map.get(selected_column)
+            if not database_column or database_column not in headers:
+                print(f"Column `{selected_column}` not found in table `{table_name}`")
+                return
+            
+            query = f"""
+                    SELECT * FROM `{table_name}` 
+                    WHERE LOWER(`{database_column}`) LIKE %s
+                    """
+            
+            cursor.execute(query, (f"%{search_text}%",))
+            results = cursor.fetchall()
 
-                for row in reader:
-                    if len(row) > column_index:         
-                        if search_text in row[column_index].lower():  # Case-insensitive search
-                            items = [QtGui.QStandardItem(field) for field in row]
-                            self.model.appendRow(items)  # Add matching rows
-                    else:
-                        print(f"Skipping row due to insufficient columns: {row}")
-                        
-        except FileNotFoundError:
-            print(f"Error: {file_name} not found.")  # Handle missing file
+            for row in results:
+                items = [QStandardItem(str(field)) for field in row]
+                self.model.appendRow(items)
+
+        except pymysql.MySQLError as err:
+                print(f"MySQL error: {err}")
+
+        finally:
+            cursor.close()
+            conn.close()
+        
+        
+            
+        
 
     def updateComboBox(self, items):
         self.searchComboBox.clear()  
@@ -430,6 +476,7 @@ class Display(object):
    
     def displayTabs(self, index):
         self.model.clear()
+        
         # 1.) STUDENT TAB
         # ---------------------------------------------
         if index == 0:  
@@ -446,7 +493,7 @@ class Display(object):
         # 2.) PROGRAM TAB
         # ---------------------------------------------
         elif index == 1:  
-            self.programCsv() #Display correct csv
+            self.programTable() #Display correct csv
             self.proxy_model.sort(0, QtCore.Qt.AscendingOrder)
             self.addButton.setText("Add Program")
             self.removeButton.setText("Remove Program")
@@ -459,7 +506,7 @@ class Display(object):
         # 2.) COLLEGE TAB
         # ---------------------------------------------
         elif index == 2:  
-            self.collegeCsv()#Display correct csv
+            self.collegeTable()#Display correct csv
             self.proxy_model.sort(0, QtCore.Qt.AscendingOrder)
             self.addButton.setText("Add College")
             self.removeButton.setText("Remove College")
@@ -494,49 +541,80 @@ class Display(object):
                     item.setFont(font)
 
     # -------------------------------- #
-    #          DISPLAYING CSV          #
-    # -------------------------------- # 
-    '''def displayCsv(self, fileName):
-        self.model.clear()  #Clear any possible preexisting table
-        with open(fileName, "r", encoding="utf-8") as fileInput:
-            reader = csv.reader(fileInput)
-            headers = next(reader, None)  # Read the first row as headers
-            if headers:
-                self.model.setHorizontalHeaderLabels(headers)
-            
-            for row in reader:
-                items = [QtGui.QStandardItem(field) for field in row]
-                self.model.appendRow(items)
-    '''
-        #self.proxy_model.sort(0, QtCore.Qt.AscendingOrder)
+    #         CUSTOM HEADERS           #
+    # -------------------------------- #    
+    def getCustomHeaders(self, table_name, db_headers):
+        column_mapping = {
+                "studenttable": {     
+                    "studentId": "STUDENT ID",
+                    "firstName": "FIRST NAME", 
+                    "lastName": "LAST NAME", 
+                    "yearLevel": "YEAR LEVEL", 
+                    "gender": "GENDER", 
+                    "programCode": "PROGRAM CODE"
+                },
+                
+                "programtable": {
+                    "programCode": "PROGRAM CODE",
+                    "programName": "PROGRAM NAME",
+                    "collegeCode": "COLLEGE CODE"
+                },
 
-    '''def studentCsv(self, force_refresh=False):
-        self.proxy_model.sort(0, QtCore.Qt.AscendingOrder)
-        self.displayCsv("CSV Files/SSIS - STUDENT.csv")
+                "collegetable": {
+                    "collegeCode": "COLLEGE CODE",
+                    "collegeName": "COLLEGE NAME"
+                }
+            }
+        mapping = column_mapping.get(table_name, {})
+        return [mapping.get(col, col) for col in db_headers]
 
-    def programCsv(self):
-        self.displayCsv('CSV Files/SSIS - PROGRAM.csv')
-
-    def collegeCsv(self):
-        self.displayCsv('CSV Files/SSIS - COLLEGE.csv')'''
+    # -------------------------------- #
+    #        DISPLAYING DATABASE       #
+    # -------------------------------- #    
     def displayDatabase(self, table_name):
-        conn = connect_database()
-        cursor = conn.cursor()
+        try:
+            self.database.connect_database()
+            cursor = self.database.cursor
+            conn = self.database.connection
 
-        cursor.execute(f"SELECT * FROM {table_name}")
-        rows = cursor.fetchall()
-        columns = [desc[0] for desc in cursor.description]
+            cursor.execute(f"SELECT * FROM {table_name}")
+            rows = cursor.fetchall()
+            columns = [desc[0] for desc in cursor.description]
 
-        self.model = QStandardItemModel()
-        self.model.setHorizontalHeaderLabels(columns)
 
-        for row in rows: 
-            items = [QtGui.QStandardItemModel(str(field) for field in row)]
-            self.model.appendRow(items)
+            self.model.setHorizontalHeaderLabels(columns)
 
-        cursor.close()
-        conn.close()
+            for row in rows: 
+                items = [QStandardItem(str(field) if field is not None else "") for field in row]
+                self.model.appendRow(items)
+            
+            self.tableView.setModel(self.model)
+ 
+            # CUSTOM HEADERS
+            #-----------------------------------
+            self.database.connect_database()
+            table_name = self.getActiveTable()
+            cursor = self.database.cursor
 
+            cursor.execute(f"SHOW COLUMNS FROM `{table_name}`")
+            database_headers = [column[0] for column in cursor.fetchall()]
+
+            
+            display_headers = self.getCustomHeaders(table_name, database_headers)
+
+            
+            self.model.setHorizontalHeaderLabels(display_headers)
+            self.model.layoutChanged.emit()
+        
+        except Exception as e:
+            print(f"❌ Error loading data from {table_name}: {e}")
+        finally:
+                try:
+                    cursor.close()
+                    conn.close()
+                except:
+                    pass
+            
     def studentTable(self, force_refresh = False):
         self.proxy_model.sort(0, QtCore.Qt.AscendingOrder)
         self.displayDatabase("studenttable")
@@ -991,46 +1069,64 @@ class Display(object):
     
     # ADDING STUDENT
     #-------------------------------------
-    def add_student_to_csv(self, new_data):
-        if not new_data:
-            QMessageBox.warning(None, "Error", "No data provided.")
-            return
+    def add_student_to_db(self, new_data):
+        self.database.connect_database()
+        cursor = self.database.cursor
+        conn = self.database.connection
+        
+        try:    
+            studentId, firstName, lastName, yearLevel, gender, programCode = new_data
 
-        try:
-            items = [QtGui.QStandardItem(field) for field in new_data]
-            self.model.appendRow(items)  
+            query = '''
+                    INSERT INTO studenttable(studentId, firstName, lastName, yearLevel, gender, programCode)
+                    VALUES(%s, %s, %s, %s, %s, %s)
+            '''
+            cursor.execute(query, (studentId, firstName, lastName, yearLevel, gender, programCode))
+            conn.commit()
 
-            self.proxy_model.sort(0, QtCore.Qt.AscendingOrder)
-
-
-            self.last_update_type = "Student"
-            self.updateButton.setVisible(True)
+            self.displayDatabase("studenttable")
 
             QMessageBox.information(None, "Success", "Student added successfully! Click 'Update' to save changes.")
 
             self.updateButton.setVisible(True)
         except Exception as e:
-            QMessageBox.critical(None, "Error", f"Failed to add student:\n{str(e)}")   
+            conn.rollback()
+            QMessageBox.critical(None, "Error", f"Failed to add student:\n{str(e)}")
+        finally:
+            cursor.close()
+            conn.close()
+            
 
     # ADDING PROGRAM
     #-------------------------------------
-    def add_program_to_csv(self, new_data):
-        if not new_data:
-            QMessageBox.warning(None, "Error", "No data provided.")
+    def add_program_to_db(self, new_data):
+        self.database.connect_database()
+        cursor = self.database.cursor
+        conn = self.database.connection
 
         try:
-            items = [QtGui.QStandardItem(field) for field in new_data]
-            self.model.appendRow(items)  
-             
+            programCode, programName = new_data
 
-            self.last_update_type = "Program"
-            self.updateButton.setVisible(True)
+            query = '''
+                    INSERT INTO programtable(programCode, programName)
+                    VALUES(%s, %s)
+            '''
+
+            cursor.execute(query, (programCode, programName))
+            conn.commit()
+
+            self.displayDatabase("programtable")
 
             QMessageBox.information(None, "Success", "Program added successfully! Click 'Update' to save changes.")
 
-            
+            self.updateButton.setVisible(True)
+
         except Exception as e:
+            conn.rollback()
             QMessageBox.critical(None, "Error", f"Failed to add program:\n{str(e)}")
+        finally:
+            cursor.close()
+            conn.close()
 
     def update_student_program_combobox(self, program_code):
         for i in range(self.studentProgram.count()):
@@ -1041,23 +1137,34 @@ class Display(object):
 
     # ADDING COLLEGE
     #-------------------------------------  
-    def add_college_to_csv(self, new_data):
-        if not new_data:
-            QMessageBox.warning(None, "Error", "No data provided.")
+    def add_college_to_db(self, new_data):
+        self.database.connect_database
+        cursor = self.database.cursor
+        conn = self.database.connection
+
 
         try:
-            items = [QtGui.QStandardItem(field) for field in new_data]
-            self.model.appendRow(items)  
+            collegeCode, collegeName = new_data 
 
-            self.last_update_type = "College"
-            self.updateButton.setVisible(True)
+            query = '''
+                    INSERT INTO collegetable(collegeCode, collegeName)
+                    VALUES(%s, %s)
+            '''
+
+            cursor.execute(query, (collegeCode, collegeName))
+            conn.commit()
+            
+            self.displayDatabase("collegetable")
 
             QMessageBox.information(None, "Success", "College added successfully! Click 'Update' to save changes.")
 
-            
+            self.updateButton.setVisible(True)
         except Exception as e:
+            conn.rollback()
             QMessageBox.critical(None, "Error", f"Failed to add college:\n{str(e)}")
-
+        finally:
+            cursor.close()
+            conn.close()
     def update_college_code_combobox(self, college_code):
         for i in range(self.collegeCode.count()):
             if self.collegeCode.itemText(i) == college_code:
@@ -1088,8 +1195,8 @@ class Display(object):
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
             new_data = dialog.get_data()
             if current_tab == 0:
-                self.add_student_to_csv(new_data)
+                self.add_student_to_db(new_data)
             elif current_tab == 1:
-                self.add_program_to_csv(new_data)
+                self.add_program_to_db(new_data)
             elif current_tab == 2:
-                self.add_college_to_csv(new_data)
+                self.add_college_to_db(new_data)
