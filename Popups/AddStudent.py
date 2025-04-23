@@ -4,12 +4,14 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtGui import QRegularExpressionValidator
 from PyQt5.QtCore import QRegularExpression
 
-import re, csv, os
+import re
+from Database_Manager.database import DatabaseManager
 
 
 class AddStudent(QtWidgets.QDialog):
     student_added = QtCore.pyqtSignal(list)  
     student_edited = QtCore.pyqtSignal(list)
+    
 
     def __init__(self, parent=None, student_data=None, table_model=None):
         super().__init__(parent if isinstance(parent, QWidget) else None) 
@@ -17,6 +19,10 @@ class AddStudent(QtWidgets.QDialog):
 
         self.editing = student_data is not None
         self.original_id = student_data[0] if self.editing else ""
+
+        #Connecting to Database
+        #--------------------------------
+        self.database = DatabaseManager()
 
         self.setObjectName("Dialog")
         self.setWindowTitle("Student Information System")
@@ -189,6 +195,7 @@ class AddStudent(QtWidgets.QDialog):
     
     def accept_data(self):
         
+
         id_number = self.idNumber.text().strip()
         first_name = re.sub(r'\s+', ' ', self.firstName.text().strip())
         last_name = re.sub(r'\s+', ' ', self.lastName.text().strip())
@@ -230,38 +237,76 @@ class AddStudent(QtWidgets.QDialog):
         
         student_data = self.get_data()
 
-        if self.editing:
-            self.student_edited.emit(student_data)
+                
+        try: 
+            self.database.connect_database()
+            cursor = self.database.cursor
+            conn = self.database.connection
 
-        else: 
-            self.student_added.emit(student_data)
+            
+            if self.editing: 
+                original_id = self.original_id
 
-        self.accept()  
+                if id_number != original_id:
+
+                    query = '''
+                        UPDATE studenttable
+                        SET studentId = %s, firstName = %s, lastName=%s, yearLevel=%s, gender=%s, programCode=%s
+                        WHERE studentId = %s
+                    '''
+                    cursor.execute(query, (
+                        id_number, student_data[1], student_data[2], student_data[3],
+                        student_data[4], student_data[5], original_id
+                    ))
+                    
+                else:
+                   
+                    query = '''
+                        UPDATE studenttable
+                        SET firstName = %s, lastName=%s, yearLevel=%s, gender=%s, programCode=%s
+                        WHERE studentId = %s
+                    '''
+                    cursor.execute(query, (
+                        student_data[1], student_data[2], student_data[3],
+                        student_data[4], student_data[5], id_number
+                    ))
+                
+                self.student_edited.emit(student_data)
+            
+            conn.commit()    
+            self.accept()  
+
+        except Exception as e:
+            conn.rollback()
+            QMessageBox.critical(self, "Database Error", f"An error occurred:\n{str(e)}")
+
+        finally:
+            cursor.close()
+            conn.close()
 
     def is_duplicate_id(self, id_number):
-        if self.table_model:
-            for row in range(self.table_model.rowCount()):
-                item = self.table_model.item(row, 0)
-                existing_id = item.text().strip() if item else ""
-                
-                if existing_id == id_number:
-                    if self.editing and id_number == self.original_id:
-                        continue  
-                    
-                    return True
+        self.database.connect_database()
+        cursor = self.database.cursor
+        conn = self.database.connection
+
+        try:
+            query = '''
+                    SELECT COUNT(*) FROM studenttable WHERE studentId = %s        
+            '''
+            cursor.execute(query, (id_number,))
+            result = cursor.fetchone()
+            if result[0] > 0:
+                return True
+            return False
         
-        file_path = 'CSV Files/SSIS - STUDENT.csv'
-        if os.path.exists(file_path):
-            with open(file_path, "r", newline="", encoding="utf-8") as file:
-                reader = csv.reader(file)
-                for row in reader:
-                    if row and row[0].strip() == id_number:
-                        if self.editing and id_number == self.original_id:
-                            continue  
-                        
-                        return True
+        except Exception as e:
+            QMessageBox.critical(self, "Database Error", f"Error checking duplicate ID:\n{str(e)}")
+            return True
         
-        return False
+        finally:
+            cursor.close()
+            conn.close()
+        
         
     def get_data(self):
         return [
@@ -274,14 +319,25 @@ class AddStudent(QtWidgets.QDialog):
         ]
     
     def load_program_codes(self):
-        file_path = "CSV Files/SSIS - PROGRAM.csv"
-        self.studentProgram.clear()  # Clear existing items
+        self.studentProgram.clear()
+        
+        try:    
+            self.database.connect_database()
+            cursor =  self.database.cursor
+            conn = self.database.connection
 
-        if os.path.exists(file_path):
-            with open(file_path, "r", newline="", encoding="utf-8") as file:
-                reader = csv.reader(file)
-                next(reader, None)  # Skip header row
+            cursor.execute(f"SELECT programCode FROM programtable")
+            program_codes = cursor.fetchall()
 
-                for row in reader:
-                    if row:  
-                        self.studentProgram.addItem(row[0])  # Add Program Code
+            for code in program_codes:
+                self.studentProgram.addItem(code[0])
+
+        except Exception as e:
+            QMessageBox.critical(None, "Error", f"Failed to load Program codes:\n{str(e)}")   
+            
+        finally:
+            cursor.close()
+            conn.close()
+            
+        
+        
