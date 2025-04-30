@@ -144,7 +144,6 @@ class AddStudent(QtWidgets.QDialog):
         self.studentProgramText.setFont(fixedsys_font)
         self.studentProgram = QtWidgets.QComboBox(self)
         self.load_program_codes()
-        self.studentProgram.addItems(["UNENROLLED"])
         self.studentProgram.setGeometry(140, 210, 111, 20)
         self.studentProgram.setFont(fixedsys_font)
         
@@ -237,52 +236,15 @@ class AddStudent(QtWidgets.QDialog):
         
         student_data = self.get_data()
 
+        if self.editing:
+            self.student_edited.emit(student_data)
+
+        else: 
+            self.student_added.emit(student_data)
+
+        self.accept()  
                 
-        try: 
-            self.database.connect_database()
-            cursor = self.database.cursor
-            conn = self.database.connection
-
-            
-            if self.editing: 
-                original_id = self.original_id
-
-                if id_number != original_id:
-
-                    query = '''
-                        UPDATE studenttable
-                        SET studentId = %s, firstName = %s, lastName=%s, yearLevel=%s, gender=%s, programCode=%s
-                        WHERE studentId = %s
-                    '''
-                    cursor.execute(query, (
-                        id_number, student_data[1], student_data[2], student_data[3],
-                        student_data[4], student_data[5], original_id
-                    ))
-                    
-                else:
-                   
-                    query = '''
-                        UPDATE studenttable
-                        SET firstName = %s, lastName=%s, yearLevel=%s, gender=%s, programCode=%s
-                        WHERE studentId = %s
-                    '''
-                    cursor.execute(query, (
-                        student_data[1], student_data[2], student_data[3],
-                        student_data[4], student_data[5], id_number
-                    ))
-                
-                self.student_edited.emit(student_data)
-            
-            conn.commit()    
-            self.accept()  
-
-        except Exception as e:
-            conn.rollback()
-            QMessageBox.critical(self, "Database Error", f"An error occurred:\n{str(e)}")
-
-        finally:
-            cursor.close()
-            conn.close()
+       
 
     def is_duplicate_id(self, id_number):
         self.database.connect_database()
@@ -291,13 +253,20 @@ class AddStudent(QtWidgets.QDialog):
 
         try:
             query = '''
-                    SELECT COUNT(*) FROM studenttable WHERE studentId = %s        
+                    SELECT studentId FROM studenttable WHERE studentId = %s        
             '''
             cursor.execute(query, (id_number,))
             result = cursor.fetchone()
-            if result[0] > 0:
+            if result:
+                if self.editing and id_number == self.original_id:
+                    return False
                 return True
+            
             return False
+
+            '''if result[0] > 0:
+                return True
+            return False'''
         
         except Exception as e:
             QMessageBox.critical(self, "Database Error", f"Error checking duplicate ID:\n{str(e)}")

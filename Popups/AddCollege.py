@@ -5,6 +5,7 @@ from PyQt5.QtGui import QRegularExpressionValidator
 from PyQt5.QtCore import QRegularExpression
 
 import re, csv, os
+from Database_Manager.database import DatabaseManager
 
 class AddCollege(QtWidgets.QDialog):
     college_added = QtCore.pyqtSignal(list)
@@ -17,6 +18,10 @@ class AddCollege(QtWidgets.QDialog):
         self.editing = college_data is not None
 
         self.original_code = college_data[0].strip().lower() if self.editing else None
+
+        #Connecting to Database
+        #--------------------------------
+        self.database = DatabaseManager()
 
         self.setObjectName("Dialog")
         self.setWindowTitle("Student Information System")
@@ -191,44 +196,39 @@ class AddCollege(QtWidgets.QDialog):
         self.accept()
 
     def is_duplicate_college(self, college_code):
+        self.database.connect_database()
+        cursor = self.database.cursor
+        conn = self.database.connection
+        
         college_code_lower =  college_code.strip().lower()
         
 
         if self.editing and college_code_lower == self.original_code:
             return False
         
-        seen_codes = set()
+        
+        try:
 
-        # 🚀 Check for duplicate in the table model (QStandardItemModel)
-        if self.table_model:
-            for row in range(self.table_model.rowCount()):
-                item = self.table_model.item(row, 0)  # Assuming ID is in column 0
-                if item: 
-                    existing_code = item.text().strip().lower()
-                    
-                    if self.editing and existing_code == self.original_code:
-                        continue
+            query = '''
+                    SELECT collegeCode from collegetable WHERE LOWER(collegeCode) = %s
+            '''
+            cursor.execute(query, (college_code_lower,))
+            result = cursor.fetchone()
 
-                    if existing_code == college_code_lower:
-                        return True
-
-        # 📂 Check for duplicate in the CSV file
-        file_path = 'CSV Files/SSIS - COLLEGE.csv'
-        if os.path.exists(file_path):
-            with open(file_path, "r", newline="", encoding="utf-8") as file:
-                reader = csv.reader(file)
-                for row in reader:
-                    if row: #and row[0].strip().lower() == college_code_lower:  # Check first column (ID)
-                        existing_code = row[0].strip().lower
-                    if self.editing and existing_code == self.original_code:
-                        continue
-                    if existing_code == college_code_lower:
-                        return True
-                    
-                    seen_codes.add(existing_code)
-                    
-
-        return False  
+            if result: 
+                 if self.editing and college_code_lower == self.original_code:
+                    return False
+                 return True
+            
+            return False
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Database Error", f"Error checking duplicate college codes:\n{str(e)}")
+            return True
+        
+        finally:
+            cursor.close()
+            conn.close()    
 
     def get_data(self):
         return [

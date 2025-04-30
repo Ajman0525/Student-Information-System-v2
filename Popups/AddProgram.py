@@ -5,6 +5,7 @@ from PyQt5.QtGui import QRegularExpressionValidator
 from PyQt5.QtCore import QRegularExpression
 
 import re, csv, os
+from Database_Manager.database import DatabaseManager
 
 class AddProgram(QtWidgets.QDialog):
     program_added = QtCore.pyqtSignal(list)
@@ -18,6 +19,10 @@ class AddProgram(QtWidgets.QDialog):
 
         self.original_code = program_data[0].strip().lower() if self.editing else None
         
+        #Connecting to Database
+        #--------------------------------
+        self.database = DatabaseManager()
+
         self.setObjectName("Dialog")
         self.setWindowTitle("Student Information System")
         self.resize(411, 277)
@@ -204,55 +209,39 @@ class AddProgram(QtWidgets.QDialog):
         self.accept()
 
     def is_duplicate_program(self, program_code):
+        self.database.connect_database()
+        cursor = self.database.cursor
+        conn = self.database.connection
+
+
         program_code_lower = program_code.strip().lower()
         
 
         if self.editing and program_code_lower == self.original_code:
             
             return False
-
-        seen_codes = set()
-
-        # ✅ Check if table_model is valid
-        if self.table_model:
-            for row in range(self.table_model.rowCount()):
-                item = self.table_model.item(row, 0)  # Column 0 is Program Code
-                if item:
-                    existing_code = item.text().strip().lower()
-                    
-
-                    if self.editing and existing_code == self.original_code:
-                        continue  
-
-                    if existing_code == program_code_lower:
-                        
-                        return True
-
-                    seen_codes.add(existing_code)
-
-        # 📂 **Check for duplicates in the CSV file**
-        file_path = 'CSV Files/SSIS - PROGRAM.csv'
-        if os.path.exists(file_path):
-            
-            with open(file_path, "r", newline="", encoding="utf-8") as file:
-                reader = csv.reader(file)
-                for row in reader:
-                    if row:
-                        existing_code = row[0].strip().lower()
-                        
-
-                        if self.editing and existing_code == self.original_code:
-                            continue  
-
-                        if existing_code == program_code_lower:
-                            
-                            return True
-
-                        seen_codes.add(existing_code)
-
         
-        return False  
+        try:
+            query = '''
+                    SELECT programCode from programtable WHERE LOWER(programCode) = %s
+            '''
+            cursor.execute(query, (program_code_lower,))
+            result = cursor.fetchone()
 
+            if result:           
+                if self.editing and program_code_lower == self.original_code:
+                    return False
+                return True
+            
+            return False
+        
+        except Exception as e:
+            QMessageBox.critical(self, "Database Error", f"Error checking duplicate program codes:\n{str(e)}")
+            return True
+        
+        finally:
+            cursor.close()
+            conn.close()         
 
     def get_data(self):
         return [
@@ -261,17 +250,26 @@ class AddProgram(QtWidgets.QDialog):
             self.collegeCode.currentText()
         ]
     def load_college_codes(self):
-        file_path = "CSV Files/SSIS - COLLEGE.csv"
-        self.collegeCode.clear()  # Clear existing items
+        self.collegeCode.clear()
 
-        if os.path.exists(file_path):
-            with open(file_path, "r", newline="", encoding="utf-8") as file:
-                reader = csv.reader(file)
-                next(reader, None)  # Skip header row
+        try:            
+            self.database.connect_database()
+            cursor = self.database.cursor
+            conn = self.database.connection
 
-                for row in reader:
-                    if row:  
-                        self.collegeCode.addItem(row[0])  # Add College Code
+            cursor.execute(f"SELECT collegeCode from collegetable")
+            college_codes = cursor.fetchall()
+
+            for code in college_codes:
+                self.collegeCode.addItem(code[0])
+
+        except Exception as e:
+            QMessageBox.critical(None, "Error", f"Failed to load College codes:\n{str(e)}")   
+
+        finally:
+            cursor.close()
+            conn.close()
+
 
 
 
