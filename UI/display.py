@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QHBoxLayout,
 from PyQt5.QtGui import QIcon, QStandardItem, QStandardItemModel
 from PyQt5.QtCore import Qt
 
-import sys, csv, copy, pymysql
+import sys, copy, pymysql
 
 from Images import header_rc
 from Database_Manager.database import DatabaseManager
@@ -139,17 +139,6 @@ class Display(QMainWindow):
         self.tableView.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.tableView.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.tableView.setFocusPolicy(Qt.NoFocus)
-
-        
-        
-
-        
-
-        
-        
-
-
-        
 
 
         # -------------------------------- #
@@ -324,7 +313,7 @@ class Display(QMainWindow):
               
     
 
-    # SAVING CSV CHANGES (UNRESOLVED)
+    # SAVING DATABASE
     # ----------------------------------------------------------------
     def updateDatabase(self, table_name, pk_column, pk_value, updated_data: dict):
         try:
@@ -832,6 +821,8 @@ class Display(QMainWindow):
     '''|                   EDITING ENTRIES                      |'''
     '''=========================================================='''
   
+    # Editing Student 
+    #-----------------
     def edit_student(self):
         self.database.connect_database()
         cursor = self.database.cursor
@@ -893,8 +884,8 @@ class Display(QMainWindow):
 
 
 
-    # EDITING PROGRAM TAB
-    #---------------------------
+    # EDITING PROGRAM 
+    #-----------------
     def edit_program(self):
         self.database.connect_database()
         cursor = self.database.cursor
@@ -953,8 +944,8 @@ class Display(QMainWindow):
             updated_data = edit_dialog.get_data()
             self.apply_program_edits(selected_index.row(), updated_data)
 
-    # EDITING COLLEGE TAB
-    #---------------------------
+    # EDITING COLLEGE 
+    #----------------
     def edit_college(self):
         self.database.connect_database()
         cursor = self.database.cursor 
@@ -1018,16 +1009,11 @@ class Display(QMainWindow):
             self.apply_college_edits(selected_row, updated_data)
 
 
-
-
-
-
         
     '''=========================================================='''
-    '''|          STORING CHANGES TO TEMPORARY STORAGE          |'''
+    '''|                     APPLYING EDITS                     |'''
     '''=========================================================='''
 
-    #Stores the edit into a copy of CSV File for it to be saved manually later
     def apply_student_edits(self, row, updated_data):
        
         if not updated_data:
