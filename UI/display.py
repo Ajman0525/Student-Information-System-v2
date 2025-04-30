@@ -428,37 +428,7 @@ class Display(QMainWindow):
             msg.setText("You have unsaved changes. Do you want to save them before exiting?")
             msg.setWindowIcon(QIcon("Images/ChickIcon.png"))
             msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
-            
-
-            msg.setStyleSheet("""
-                QMessageBox {
-                    background-color: #fce090; 
-                    color: white;  
-                    font-family: "Fixedsys"; 
-                }
-
-                QPushButton {
-                        font-family: 'Fixedsys';
-                        background-color: white; 
-                        color: black;
-                        border-radius: 5px;
-                        padding: 10px
-                    }
-
-                    QPushButton:hover {
-                        background-color: #ffb36b; 
-                        color: white;
-                    }
-
-                    QPushButton:pressed {
-                        background-color: #CD853F; 
-                        color: white;
-                    }
-            """)
-
-
-
-
+           
             reply = msg.exec_()
 
             if reply == QMessageBox.Yes:
@@ -476,11 +446,16 @@ class Display(QMainWindow):
     def onTabChanged(self, index):
         self.previousTabIndex = self.tabWidget.currentIndex()
         if self.updateButton.isVisible():
-            reply = QMessageBox.question(
-                self, "Unsaved Changes",
-                "You have unsaved changes. Do you want to save them before switching tabs?",
-                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
-            )
+            
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("Unsaved Changes")
+            msg.setText("You have unsaved changes. Do you want to save them before switching tabs?")
+            msg.setWindowIcon(QIcon("Images/ChickIcon.png"))
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+            
+            reply = msg.exec_()
+            
             if reply == QMessageBox.Yes:
                 self.performUpdate()
             elif reply == QMessageBox.Cancel:
