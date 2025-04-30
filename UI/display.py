@@ -17,12 +17,15 @@ from Buttons.updateButton import UpdateButton
 from Buttons.editButton import EditButton
 
 
-class Display(object):
-    
+class Display(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setupUi(self)
 
     '''=========================================================='''
     '''|                    WINDOW DISPLAY                      |'''
     '''=========================================================='''
+    
     def setupUi(self, MainWindow):
 
         MainWindow.setObjectName("MainWindow")
@@ -69,7 +72,7 @@ class Display(object):
         # UPDATE BUTTON
         # ------------------------------------------------
         UpdateButton(self) 
-        self.updateButton.clicked.connect(lambda: self.updateCsv(self.getActiveTable()))
+        self.updateButton.clicked.connect(self.performUpdate)
         self.updateButton.setVisible(False) 
         self.last_update_type = None
 
@@ -109,18 +112,10 @@ class Display(object):
             selection-color: white;  /* Change text color of selected row */                                              
                                                  
         """)
-        self.model = QtGui.QStandardItemModel(MainWindow)
-        self.tableView.setModel(self.model)
-        self.tableView.verticalHeader().setVisible(False)
-        self.tableView.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch) #For table display automatic fitting
         
-        #Focus and Selection of Rows    
-        self.tableView.setSelectionBehavior(QtWidgets.QTableView.SelectRows) #Highlight the entire rows
-        self.tableView.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self.tableView.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.tableView.setFocusPolicy(Qt.NoFocus)
-        self.tableView.selectionModel().selectionChanged.connect(self.highlight_selected_row) #Selected row is bolder in color
         self.layout = QtWidgets.QVBoxLayout(self.centralwidget)
+
+        self.model = QtGui.QStandardItemModel(MainWindow)
 
         # -------------------------------- #
         #         SORTING COLUMNS          #
@@ -129,9 +124,28 @@ class Display(object):
         self.proxy_model.setSourceModel(self.model)
         self.proxy_model.setSortCaseSensitivity(QtCore.Qt.CaseInsensitive)  # Case-insensitive sorting
         self.proxy_model.setSortRole(QtCore.Qt.DisplayRole)  # Sort by display text
-
+        
         self.tableView.setModel(self.proxy_model)  # Apply proxy model to table
         self.tableView.setSortingEnabled(True)  # Enable sorting'''
+
+        self.tableView.selectionModel().selectionChanged.connect(self.highlight_selected_row) #Selected row is bolder in color
+
+        #self.tableView.setModel(self.model)
+        self.tableView.verticalHeader().setVisible(False)
+        self.tableView.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch) #For table display automatic fitting
+        
+        #Focus and Selection of Rows    
+        self.tableView.setSelectionBehavior(QtWidgets.QTableView.SelectRows) #Highlight the entire rows
+        self.tableView.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.tableView.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.tableView.setFocusPolicy(Qt.NoFocus)
+
+        
+        
+
+        
+
+        
         
 
 
@@ -242,13 +256,15 @@ class Display(object):
     '''|                   DATABASE MANAGEMENT                   '''
     '''=========================================================='''
 
-    # DELETING ROWS FROM TABS  (UNRESOLVED)
+    # DELETING ROWS FROM TABS  
     # ----------------------------------------------------------------
     def removeData(self):
         selected_tab = self.tabWidget.currentIndex()
         selected_rows = self.tableView.selectionModel().selectedRows()
         
         if not selected_rows:
+            message = QMessageBox()
+            message.setWindowIcon(QIcon("Images/ChickIcon.png"))
             QMessageBox.warning(None, "Warning", "Please select a row")
             return
 
@@ -301,65 +317,135 @@ class Display(object):
                 self.cascade_delete_program(row_data[0])
 
             elif selected_tab == 0:  # Student Tab
-                student_id = row_data[0]
+                self.delete_student(row_data[0])
               
-                
-                '''conn = connect_database()
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM studenttable")
-                student = cursor.fetchall()'''
-
-
-
-                file_name = "CSV Files/SSIS - STUDENT.csv"
-                with open(file_name, "r", newline="", encoding="utf-8") as file:
-                    reader = csv.reader(file)
-                    students = [row for row in reader if row[0] != student_id]
-            
-                with open(file_name, "w", newline="", encoding="utf-8") as file:
-                    writer = csv.writer(file)
-                    writer.writerows(students)
-            
-                QMessageBox.information(None, "Success", "Student deleted successfully!")
-
     
 
     # SAVING CSV CHANGES (UNRESOLVED)
     # ----------------------------------------------------------------
-    def updateCsv(self, file_name):
-        
-        if not file_name:
+    def updateDatabase(self, table_name, pk_column, pk_value, updated_data: dict):
+        try:
+            self.database.connect_database()
+            cursor = self.database.cursor
+            conn = self.database.connection
+
+            set_clause = ','.join([f"{col} = %s" for col in updated_data.keys()])
+            values = list(updated_data.values()) 
+            values.append(pk_value)
+
+
+            query = f'''
+                UPDATE {table_name}
+                SET {set_clause}
+                WHERE {pk_column} = %s
+                
+            '''
+            
+            cursor.execute(query, values)
+            conn.commit()
+
+            
+
+        except Exception as e:
+            conn.rollback()
+            #QMessageBox.critical(None, "Update Error", f"Failed to update record:\n {str(e)}")
+            print(f"Failed to update record:\n {str(e)}")
+        finally:
+            cursor.close()
+            conn.close()
+
+    def performUpdate(self):
+        table_map = {
+            "Student": ("studenttable", "studentId"),
+            "Program": ("programtable", "programCode"),
+            "College": ("collegetable", "collegeCode")
+        }
+
+        column_map = {
+            "Student": {
+                "STUDENT ID": "studentId",
+                "FIRST NAME": "firstName",
+                "LAST NAME": "lastName",
+                "YEAR LEVEL": "yearLevel",
+                "GENDER": "gender",
+                "PROGRAM CODE": "programCode"
+            },
+            "Program": {
+                "PROGRAM CODE": "programCode",
+                "PROGRAM NAME": "programName",
+                "COLLEGE CODE": "collegeCode"
+            },
+            "College": {
+                "COLLEGE CODE": "collegeCode",
+                "COLLEGE NAME": "collegeName"
+            }
+        }
+
+        if self.last_update_type not in table_map:
             return
 
-        with open(file_name, "w", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
+        table_name, pk_column = table_map[self.last_update_type]
+        col_map = column_map[self.last_update_type]
 
-            # Write headers
-            headers = [self.model.headerData(i, Qt.Horizontal) for i in range(self.model.columnCount())]
-            writer.writerow(headers)
+        changes_made = False
 
-            # Write data from the PROXY model (sorted/filtered view)
-            for row in range(self.proxy_model.rowCount()):
-                row_data = []
-                for col in range(self.model.columnCount()):
-                    index = self.proxy_model.index(row, col)  # Get index from proxy
-                    item = self.proxy_model.data(index, Qt.DisplayRole)
-                    row_data.append(item if item else "")
-                writer.writerow(row_data)
+        for row in range(self.model.rowCount()):
+            pk_value = self.model.item(row, 0).text()
+            updated_data = {}
+            row_changed = False
 
-        if self.last_update_type == "Student":
-            QMessageBox.information(None, "Success", "Student records have been updated successfully!")
-        elif self.last_update_type == "Program":
-            QMessageBox.information(None, "Success", "Program records have been updated successfully!")
-        elif self.last_update_type == "College":
-            QMessageBox.information(None, "Success", "College records have been updated successfully!")
+            for col in range(1, self.model.columnCount()):
+                column_name = self.model.headerData(col, Qt.Horizontal)
+                db_col = col_map.get(column_name)
+                if not db_col:
+                    continue
+
+                item = self.model.item(row, col)
+                current_value = item.text() if item else ""
+                original_value = item.data(Qt.UserRole) or ""
+
+                if current_value.strip() != original_value.strip():
+                    updated_data[db_col] = current_value
+                    row_changed = True
+
+            if row_changed:
+                self.updateDatabase(table_name, pk_column, pk_value, updated_data)
+                changes_made = True
+
+        if changes_made:
+            self.displayDatabase(table_name)
+            QMessageBox.information(None, "Success", f"{self.last_update_type} records have been updated successfully!")
         else:
-            QMessageBox.information(None, "Success", "Changes saved successfully!")
+            QMessageBox.information(None, "No Changes", f"No changes detected in {self.last_update_type} records.")
 
-        self.updateButton.setVisible(False)  # ✅ Hide update button after saving
-        self.last_update_type = None  # ✅ Reset update type
+        self.updateButton.setVisible(False)
+        self.last_update_type = None
 
-    
+
+
+
+
+    # Update prompts when closing the application
+    #--------------------------------------------
+    def closeEvent(self, event):
+        if self.updateButton.isVisible():
+            reply = QMessageBox.question(
+                self, "Unsaved Changes", 
+                "You have unsaved Changes. Do you want to save them before exiting?",
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
+            )
+
+            if reply == QMessageBox.Yes:
+                self.performUpdate()
+                event.accept()
+            elif reply == QMessageBox.No:
+                event.accept()
+            else:
+                event.ignore()
+        else:
+            event.accept()
+
+
     def getActiveTable(self):
         if self.tabWidget.currentIndex() == 0:
             return "studenttable"
@@ -442,10 +528,7 @@ class Display(object):
         finally:
             cursor.close()
             conn.close()
-        
-        
-            
-        
+           
 
     def updateComboBox(self, items):
         self.searchComboBox.clear()  
@@ -583,18 +666,30 @@ class Display(object):
 
 
             self.model.setHorizontalHeaderLabels(columns)
+            self.model.removeRows(0, self.model.rowCount())
+
+            if table_name == 'programtable':
+                rows = [row for row in rows if row[columns.index('programCode')] != "UNENROLLED"]
+                
 
             for row in rows: 
-                items = [QStandardItem(str(field) if field is not None else "") for field in row]
-                self.model.appendRow(items)
-            
-            self.tableView.setModel(self.model)
- 
+                new_row = []
+                for idx, field in enumerate(row):
+                    if columns[idx] == "programCode":
+                        value = field if field and str(field).strip() else "UNENROLLED"
+                    else:
+                        value = field if field is not None else ""
+
+                    item = QStandardItem(str(value))
+                    item.setData(str(value), Qt.UserRole)
+                    new_row.append(QStandardItem(str(value)))
+                self.model.appendRow(new_row)
+    
             # CUSTOM HEADERS
             #-----------------------------------
-            self.database.connect_database()
+            
             table_name = self.getActiveTable()
-            cursor = self.database.cursor
+            
 
             cursor.execute(f"SHOW COLUMNS FROM `{table_name}`")
             database_headers = [column[0] for column in cursor.fetchall()]
@@ -607,7 +702,7 @@ class Display(object):
             self.model.layoutChanged.emit()
         
         except Exception as e:
-            print(f"❌ Error loading data from {table_name}: {e}")
+            print(f"Error loading data from {table_name}: {e}")
         finally:
                 try:
                     cursor.close()
@@ -675,71 +770,179 @@ class Display(object):
     '''|                   EDITING ENTRIES                      |'''
     '''=========================================================='''
   
-    # EDITING STUDENT TAB
-    #---------------------------
     def edit_student(self):
-        selected_index = self.tableView.selectionModel().currentIndex()  # Get the selected index
+        self.database.connect_database()
+        cursor = self.database.cursor
+        conn = self.database.connection
+
+        
+        selected_index = self.tableView.selectionModel().currentIndex()
         if not selected_index.isValid():
-            QMessageBox.warning(None, "Selection Error", "Please select a Student to edit.")
+            QMessageBox.warning(None, "Selection Error", "Please select a student to edit.")
+            return
+       
+        if selected_index.model() != self.proxy_model:
+            QMessageBox.critical(None, "Error", "Selected index is not from proxy model!")
             return
 
+        
         source_index = self.proxy_model.mapToSource(selected_index)
-        selected_row = source_index.row()  # Get the row number
+        selected_row = source_index.row()
 
-        student_data = [
-            self.model.item(selected_row, col).text() if self.model.item(selected_row, col) else ""
-            for col in range(self.model.columnCount())
-        ]
+        
+        student_id_index = self.model.index(selected_row, 0)
+        student_id = self.model.data(student_id_index)
 
-        edit_dialog = AddStudent(self.centralwidget, student_data, table_model = self.model)
+       
+
+        if not student_id:
+            QMessageBox.warning(None, "Error", "Selected row has no Student ID.")
+            return
+
+        try:
+            query = '''
+                SELECT studentId, firstName, lastName, yearLevel, gender, programCode 
+                FROM studenttable
+                WHERE studentId = %s
+            '''
+            cursor.execute(query, (student_id,))
+            result = cursor.fetchone()
+
+            if not result:
+                QMessageBox.critical(None, "Error", "Student record not found in the database.")
+                return
+
+            student_data = list(result)
+
+        except Exception as e:
+            QMessageBox.critical(None, "Database Error", f"Failed to retrieve student:\n{str(e)}")
+            return
+
+        finally:
+            cursor.close()
+            conn.close()
+
+        # Open the AddStudent dialog pre-filled with existing data
+        edit_dialog = AddStudent(self.centralwidget, student_data, table_model=self.model)
         if edit_dialog.exec_() == QtWidgets.QDialog.Accepted:
             updated_data = edit_dialog.get_data()
-            self.apply_student_edits(selected_row, updated_data)
-      
+            self.apply_student_edits(selected_row, updated_data)  
+
 
 
 
     # EDITING PROGRAM TAB
     #---------------------------
     def edit_program(self):
+        self.database.connect_database()
+        cursor = self.database.cursor
+        conn = self.database.connection
+    
         selected_index = self.tableView.selectionModel().currentIndex()
         if not selected_index.isValid():
             QMessageBox.warning(None, "Selection Error", "Please select a Program to edit.")
             return
      
+        if selected_index.model() != self.proxy_model:
+            QMessageBox.critical(None, "Error", "Selected index is not from proxy model!")
+            return
+   
         source_index = self.proxy_model.mapToSource(selected_index)
         selected_row = source_index.row()  
 
-        program_data = [
+        program_code_index = self.model.index(selected_row, 0)
+        program_code = self.model.data(program_code_index)
+
+        if not program_code:
+            QMessageBox.warning(None, "Error", "Selected row has no Program Code.")
+            return
+
+        '''program_data = [
             self.model.item(selected_row, col).text() if self.model.item(selected_row, col) else ""
             for col in range(self.model.columnCount())
-        ]
+        ]'''
 
+        try:
+            query = '''
+                SELECT programCode, programName, collegeCode
+                FROM programtable
+                WHERE programCode = %s
+            '''
+        
+            cursor.execute(query, (program_code,))
+            result = cursor.fetchone()
+
+            if not result:
+                QMessageBox.critical(None, "Error", "Program record not found in the database.")
+                return
+            
+            program_data = list(result)
+
+        except Exception as e:
+            QMessageBox.critical(None, "Database Error", f"Failed to retrieve program:\n{str(e)}")
+            return
+            
+        finally:
+            cursor.close()
+            conn.close()
+            
         edit_dialog = AddProgram(self.centralwidget, program_data, table_model = self.model)
         if edit_dialog.exec_() == QtWidgets.QDialog.Accepted:
             updated_data = edit_dialog.get_data()
-
             self.apply_program_edits(selected_index.row(), updated_data)
-     
 
     # EDITING COLLEGE TAB
     #---------------------------
     def edit_college(self):
+        self.database.connect_database()
+        cursor = self.database.cursor 
+        conn = self.database.connection
+
+
         selected_index = self.tableView.selectionModel().currentIndex()
         if not selected_index.isValid():
             QMessageBox.warning(None, "Selection Error", "Please select a College to edit.")
             return
 
+        if selected_index.model() != self.proxy_model:
+            QMessageBox.critical(None, "Error", "Selected index is not from proxy model!")
+            return
+        
         # Convert proxy index to source index
         source_index = self.proxy_model.mapToSource(selected_index)
         selected_row = source_index.row()
 
+        college_code_index = self.model.index(selected_row, 0)
+        college_code = self.model.data(college_code_index)
 
-        # Get data from the source model, NOT the proxy model
-        college_data = [
-            self.model.item(selected_row, col).text() if self.model.item(selected_row, col) else ""
-            for col in range(self.model.columnCount())
-        ]
+        if not college_code:
+            QMessageBox.warning(None, "Error", "Selected row has no College Code.")
+            return
+        
+        
+        try:
+            query = '''
+                    Select collegeCode, collegeName
+                    FROM collegetable
+                    WHERE collegeCode = %s
+            '''
+
+            cursor.execute(query, (college_code,))
+            result = cursor.fetchone()
+
+            if not result:
+                QMessageBox.critical(None, "Error", "College record not found in the database.")
+                return
+
+            college_data = list(result)
+
+        except Exception as e:
+            QMessageBox.critical(None, "Database Error", f"Failed to retrieve college:\n{str(e)}")
+            return
+
+        finally:
+            cursor.close()
+            conn.close()
 
   
 
@@ -750,7 +953,6 @@ class Display(object):
             #Prevent the College tab from resetting the table after editing
             self.is_editing = True
 
-            #Pass the correct source row
             self.apply_college_edits(selected_row, updated_data)
 
 
@@ -765,7 +967,7 @@ class Display(object):
 
     #Stores the edit into a copy of CSV File for it to be saved manually later
     def apply_student_edits(self, row, updated_data):
-        """ Updates the selected row in the table without saving to CSV immediately """
+       
         if not updated_data:
             QMessageBox.warning(None, "Error", "No data provided.")
             return
@@ -780,7 +982,7 @@ class Display(object):
 
         QMessageBox.information(None, "Success", "Changes applied! Click 'Update' to save them permanently.")
     
-    #Stores the edit into a copy of  CSV File for it to  be saved manually later
+
     
     def apply_program_edits(self, proxy_row, updated_data):
         if not updated_data:
@@ -806,10 +1008,9 @@ class Display(object):
 
         # Update related students
         if old_program_code != new_program_code:
-            self.update_student_program_code(old_program_code, new_program_code)
+            self.cascade_programCode(old_program_code, new_program_code)
 
-        # Save changes immediately
-        self.updateCsv("CSV Files/SSIS - PROGRAM.csv")
+        self.programTable()
 
         QMessageBox.information(None, "Success", "Program Code updated and saved automatically!")
 
@@ -836,10 +1037,10 @@ class Display(object):
 
         # Update related programs if College Code changed
         if old_college_code != new_college_code:
-            self.update_program_college_code(old_college_code, new_college_code)
+            self.cascade_collegeCode(old_college_code, new_college_code)
 
         #  Save changes immediately
-        self.updateCsv("CSV Files/SSIS - COLLEGE.csv")
+        self.collegeTable()
 
         QMessageBox.information(None, "Success", "College Code updated and saved automatically!")
 
@@ -847,139 +1048,211 @@ class Display(object):
     '''=========================================================='''
     '''|                  CASCADING EFFECT                      |'''
     '''=========================================================='''
-    
-    def update_program_college_code(self, old_college_code, new_college_code):
-        file_path = "CSV Files/SSIS - PROGRAM.csv"
-        programs = []
 
-        #  Load program data
-        with open(file_path, "r", newline="", encoding="utf-8") as file:
-            reader = csv.reader(file)
-            programs = [row for row in reader]
+    # Cascade changes in Program Code
+    # -------------------------------
+    def cascade_programCode(self, old_programCode, new_programCode):
+        try:
+            self.database.connect_database()
+            cursor = self.database.cursor
+            conn  = self.database.connection
 
-        #  Update college code in programs
-        updated = False
-        for row in programs:
-            if row[2] == old_college_code:
-                row[2] = new_college_code
-                updated = True
-
-        #  Save changes ONLY if updates were made
-        if updated:
-            with open(file_path, "w", newline="", encoding="utf-8") as file:
-                writer = csv.writer(file)
-                writer.writerows(programs)
-
-            # Force UI Refresh for Program Tab
-            if self.tabWidget.currentIndex() == 1:
-                self.programCsv()
-
-    def update_student_program_code(self, old_program_code, new_program_code):
-        file_path = "CSV Files/SSIS - STUDENT.csv"
-        students = []
-        updated = False 
-
-        #  Load student data
-        with open(file_path, "r", newline="", encoding="utf-8") as file:
-            reader = csv.reader(file)
-            students = [row for row in reader]
-
-  
-        for row in students:
            
-            if len(row) > 5 and row[5] == old_program_code:  # Column 5 = Program Code
-                row[5] = new_program_code  # Update Program Code
-                updated = True
+            update_program_programCode = '''
+                UPDATE programtable
+                SET programCode = %s
+                WHERE programCode = %s
+            '''
+            cursor.execute(update_program_programCode, (new_programCode, old_programCode))
+             
+            update_student_programCode = '''
+                UPDATE studenttable
+                SET programCode = %s
+                WHERE programCode = %s
+            '''
+            cursor.execute(update_student_programCode, (new_programCode, old_programCode))
+            
+            conn.commit()
 
-        #  Save changes only if updates were made
-        if updated:
-            with open(file_path, "w", newline="", encoding="utf-8") as file:
-                writer = csv.writer(file)
-                writer.writerows(students)  
+            self.studentTable()
+            self.programTable()
+            self.displayTabs(self.tabWidget.currentIndex())
+        
+        except Exception as e:
+            conn.rollback()
+            #QMessageBox.critical(None, "Database Error", f"Failed to update program code:\n{str(e)}")
+            print(f"Failed to update program code:\n{str(e)}")
 
-            # ✅ Only refresh Student Tab **if the user is already there**
-            if self.tabWidget.currentIndex() == 0:
-                self.studentCsv()  #  Refresh Student Table only when user is in Student Tab
+        finally:
+            cursor.close()
+            conn.close()
 
+    # Cascade changes in College Code
+    # -------------------------------
+    def cascade_collegeCode(self, old_collegeCode, new_collegeCode):
+        try:
+            self.database.connect_database()
+            cursor = self.database.cursor
+            conn = self.database.connection
 
+            update_college_collegeCode = '''
+                UPDATE collegetable
+                SET collegeCode = %s
+                WHERE collegeCode = %s
+            '''
+            cursor.execute(update_college_collegeCode, (new_collegeCode, old_collegeCode))
+
+            update_program_collegeCode = '''
+                UPDATE programtable
+                SET collegeCode = %s
+                WHERE collegeCode = %s
+            '''
+            cursor.execute(update_program_collegeCode,(new_collegeCode, old_collegeCode))
+
+            conn.commit()
+
+            self.studentTable()
+            self.programTable()
+            self.collegeTable()
+            self.displayTabs(self.tabWidget.currentIndex())
+
+        except Exception as e:
+            conn.rollback()
+            QMessageBox.critical(None, "Database Error", f"Failed to update college code:\n{str(e)}")
+        finally:
+            cursor.close()
+            conn.close()
+
+    # Cascade on deleting College
+    # ---------------------------
     def cascade_delete_college(self, college_code):
-        college_file = "CSV Files/SSIS - COLLEGE.csv"
-        program_file = "CSV Files/SSIS - PROGRAM.csv"
-        student_file = "CSV Files/SSIS - STUDENT.csv"
+        try:     
+            self.database.connect_database()
+            cursor = self.database.cursor
+            conn = self.database.connection
 
-        # Remove the College from CSV
-        with open(college_file, "r", newline="", encoding="utf-8") as file:
-            reader = csv.reader(file)
-            colleges = [row for row in reader if row[0] != college_code]  # Keep only colleges NOT matching the deleted one
+            select_programs = '''
+                SELECT programCode from programtable 
+                WHERE collegeCode = %s
+            '''
+            cursor.execute(select_programs, (college_code,))
+            program_codes = cursor.fetchall()
+            if program_codes:
+                program_codes_list = [row[0] for row in program_codes]
+                placeholders = ', '.join(['%s'] * len(program_codes_list))
+                update_students = f'''
+                    UPDATE studenttable
+                    SET programCode = 'UNENROLLED'
+                    WHERE programCode IN ({placeholders})
+                '''
+                cursor.execute(update_students, program_codes_list)
+            
+            deleting_programs = '''
+                DELETE FROM programtable
+                WHERE collegeCode = %s
+            '''
+            cursor.execute(deleting_programs, (college_code,))
 
-        with open(college_file, "w", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerows(colleges)
+            deleting_college = '''
+                DELETE FROM collegetable
+                WHERE collegeCode = %s
+            '''
+            cursor.execute(deleting_college, (college_code,))
+                
+            
+            conn.commit()
 
-        #  Remove Programs under the College
-        with open(program_file, "r", newline="", encoding="utf-8") as file:
-            reader = csv.reader(file)
-            programs = [row for row in reader if row[2] != college_code]  # Filter out programs under deleted college
 
-        with open(program_file, "w", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerows(programs)
+            self.studentTable()
+            self.programTable()
+            self.collegeTable()
+            self.displayTabs(self.tabWidget.currentIndex())
 
-        #  Update Students (Mark as UNENROLLED if their Program was deleted)
-        with open(student_file, "r", newline="", encoding="utf-8") as file:
-            reader = csv.reader(file)
-            students = []
-            deleted_programs = {p[0] for p in programs}  # Get remaining program codes
-            for row in reader:
-                if row[5] not in deleted_programs:  
-                    row[5] = "UNENROLLED"  # If student's program was deleted, mark as UNENROLLED
-                students.append(row)
+            
+            QMessageBox.information(None, "Success", "College deleted and associated entries updated successfully!")
 
-        with open(student_file, "w", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerows(students)
+        except Exception as e:
+            conn.rollback()  
+            QMessageBox.critical(None, "Database Error", f"Failed to delete college:\n{str(e)}")
+        finally:
+            cursor.close()
+            conn.close()
 
-        # Refresh UI
-        self.collegeCsv()
-        self.programCsv()
-        self.studentCsv()
-
-        self.displayTabs(self.tabWidget.currentIndex())
-        QMessageBox.information(None, "Success", "College deleted and associated entries updated successfully!")
-
+    # Cascade on deleting Program
+    # ---------------------------
     def cascade_delete_program(self, program_code):
-        program_file = "CSV Files/SSIS - PROGRAM.csv"
-        student_file = "CSV Files/SSIS - STUDENT.csv"
+        try:
+            self.database.connect_database()
+            cursor = self.database.cursor
+            conn = self.database.connection
 
-        #  Remove the Program from CSV
-        with open(program_file, "r", newline="", encoding="utf-8") as file:
-            reader = csv.reader(file)
-            programs = [row for row in reader if row[0] != program_code]  # Keep programs that are NOT being deleted
+            select_students = '''
+                SELECT studentId from studenttable
+                WHERE programCode = %s 
+            '''
+            cursor.execute(select_students,(program_code,))
+            students = cursor.fetchall()
 
-        with open(program_file, "w", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerows(programs)
+            if students:
+                student_list = [row[0] for row in students]
+                placeholders = ','.join(['%s'] * len(student_list))
+                update_students = f'''
+                    UPDATE studenttable
+                    SET programCode = 'UNENROLLED'
+                    WHERE programCode in ({placeholders})
+                '''
+                cursor.execute(update_students, student_list)
 
-        # Update Students (Mark as UNENROLLED if their Program was deleted)
-        with open(student_file, "r", newline="", encoding="utf-8") as file:
-            reader = csv.reader(file)
-            students = []
-            remaining_programs = {p[0] for p in programs}  # Get remaining program codes
-            for row in reader:
-                if row[5] not in remaining_programs:  
-                    row[5] = "UNENROLLED"  # If student's program was deleted, mark as UNENROLLED
-                students.append(row)
+            deleting_programs = '''
+                DELETE FROM programtable
+                WHERE programCode = %s
+            '''
+            cursor.execute(deleting_programs, (program_code,))
 
-        with open(student_file, "w", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerows(students)
+            conn.commit()
 
-        # Refresh UI
-        self.programCsv()
-        self.studentCsv()
+            self.studentTable()
+            self.programTable()
+            self.displayTabs(self.tabWidget.currentIndex())
 
-        self.displayTabs(self.tabWidget.currentIndex())
-        QMessageBox.information(None, "Success", "Program deleted and students updated successfully!")
+            QMessageBox.information(None, "Success", "Program deleted and students updated successfully!")
+        
+        except Exception as e:
+            conn.rollback()  
+            QMessageBox.critical(None, "Database Error", f"Failed to delete program:\n{str(e)}")
+        finally:
+            cursor.close()
+            conn.close()
+
+        
+    def delete_student(self, student_data):
+        try:
+            self.database.connect_database()
+            cursor = self.database.cursor
+            conn = self.database.connection
+
+            deleting_students = '''
+                DELETE from studenttable
+                WHERE studentId = %s
+            '''
+
+            cursor.execute(deleting_students, (student_data,))
+
+            conn.commit()
+
+            self.studentTable()
+            self.displayTabs(self.tabWidget.currentIndex())
+
+            QMessageBox.information(None, "Success", "Student deleted successfully!")
+
+        except Exception as e:
+            conn.rollback()
+            QMessageBox.critical(None, "Error", f"Failed to delete student:\n{str(e)}")
+        finally:
+            cursor.close()
+            conn.close()
+            
+    
 
     '''=========================================================='''
     '''|                   UPDATING RECORD                      |'''
@@ -1105,14 +1378,14 @@ class Display(object):
         conn = self.database.connection
 
         try:
-            programCode, programName = new_data
+            programCode, programName, collegeCode = new_data
 
             query = '''
-                    INSERT INTO programtable(programCode, programName)
-                    VALUES(%s, %s)
+                    INSERT INTO programtable(programCode, programName, collegeCode)
+                    VALUES(%s, %s, %s)
             '''
 
-            cursor.execute(query, (programCode, programName))
+            cursor.execute(query, (programCode, programName, collegeCode))
             conn.commit()
 
             self.displayDatabase("programtable")
@@ -1138,7 +1411,7 @@ class Display(object):
     # ADDING COLLEGE
     #-------------------------------------  
     def add_college_to_db(self, new_data):
-        self.database.connect_database
+        self.database.connect_database()
         cursor = self.database.cursor
         conn = self.database.connection
 
