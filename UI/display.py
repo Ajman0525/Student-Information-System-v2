@@ -193,6 +193,9 @@ class Display(QMainWindow):
         self.tabWidget.setTabShape(QtWidgets.QTabWidget.Triangular)
         self.tabWidget.setMovable(False)
         self.tabWidget.setObjectName("tabWidget")
+
+        self.tabWidget.currentChanged.connect(self.onTabChanged)
+
         self.studentTab = QtWidgets.QWidget()
         self.studentTab.setObjectName("studentTab")
         self.tabWidget.addTab(self.studentTab, "")
@@ -344,12 +347,11 @@ class Display(QMainWindow):
             cursor.execute(query, values)
             conn.commit()
 
-            
-
+    
         except Exception as e:
             conn.rollback()
-            #QMessageBox.critical(None, "Update Error", f"Failed to update record:\n {str(e)}")
-            print(f"Failed to update record:\n {str(e)}")
+            QMessageBox.critical(None, "Update Error", f"Failed to update record:\n {str(e)}")
+            
         finally:
             cursor.close()
             conn.close()
@@ -414,6 +416,7 @@ class Display(QMainWindow):
 
         if changes_made:
             self.displayDatabase(table_name)
+            
             QMessageBox.information(None, "Success", f"{self.last_update_type} records have been updated successfully!")
         else:
             QMessageBox.information(None, "No Changes", f"No changes detected in {self.last_update_type} records.")
@@ -429,11 +432,45 @@ class Display(QMainWindow):
     #--------------------------------------------
     def closeEvent(self, event):
         if self.updateButton.isVisible():
-            reply = QMessageBox.question(
-                self, "Unsaved Changes", 
-                "You have unsaved Changes. Do you want to save them before exiting?",
-                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
-            )
+            
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("Unsaved Changes")
+            msg.setText("You have unsaved changes. Do you want to save them before exiting?")
+            msg.setWindowIcon(QIcon("Images/ChickIcon.png"))
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+            
+
+            msg.setStyleSheet("""
+                QMessageBox {
+                    background-color: #fce090; 
+                    color: white;  
+                    font-family: "Fixedsys"; 
+                }
+
+                QPushButton {
+                        font-family: 'Fixedsys';
+                        background-color: white; 
+                        color: black;
+                        border-radius: 5px;
+                        padding: 10px
+                    }
+
+                    QPushButton:hover {
+                        background-color: #ffb36b; 
+                        color: white;
+                    }
+
+                    QPushButton:pressed {
+                        background-color: #CD853F; 
+                        color: white;
+                    }
+            """)
+
+
+
+
+            reply = msg.exec_()
 
             if reply == QMessageBox.Yes:
                 self.performUpdate()
@@ -445,6 +482,28 @@ class Display(QMainWindow):
         else:
             event.accept()
 
+    # Update prompts when switching Tabs
+    #-----------------------------------
+    def onTabChanged(self, index):
+        self.previousTabIndex = self.tabWidget.currentIndex()
+        if self.updateButton.isVisible():
+            reply = QMessageBox.question(
+                self, "Unsaved Changes",
+                "You have unsaved changes. Do you want to save them before switching tabs?",
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
+            )
+            if reply == QMessageBox.Yes:
+                self.performUpdate()
+            elif reply == QMessageBox.Cancel:
+                self.tabWidget.blockSignals(True)
+                self.tabWidget.setCurrentIndex(self.previousTabIndex)
+                self.tabWidget.blockSignals(False)
+                return
+            elif reply == QMessageBox.No:
+                self.updateButton.setVisible(False)
+            
+        self.previousTabIndex = index
+        
 
     def getActiveTable(self):
         if self.tabWidget.currentIndex() == 0:
@@ -685,6 +744,9 @@ class Display(QMainWindow):
                     new_row.append(QStandardItem(str(value)))
                 self.model.appendRow(new_row)
     
+            for item in new_row:
+                item.setData(item.text(), Qt.UserRole)
+
             # CUSTOM HEADERS
             #-----------------------------------
             
@@ -1252,90 +1314,6 @@ class Display(QMainWindow):
             cursor.close()
             conn.close()
             
-    
-
-    '''=========================================================='''
-    '''|                   UPDATING RECORD                      |'''
-    '''=========================================================='''
-
-    # UPDATING STUDENT
-    #-----------------------------------------------
-    def update_student_record(self, updated_student):
-        file_path = "CSV Files/SSIS - STUDENT.csv"
-        students = []
-
-        # Read all students
-        with open(file_path, "r", newline="", encoding="utf-8") as file:
-            reader = csv.reader(file)
-            students = [row for row in reader]
-
-        # Update the student with the matching ID
-        for i, student in enumerate(students):
-            if student[0] == updated_student[0]:  # Match ID number
-                students[i] = updated_student
-                break
-
-        # Save the updated list
-        with open(file_path, "w", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerows(students)
-
-        QMessageBox.information(None, "Success", "Student added successfully! Click 'Update' to save changes.")
-        
-        self.studentCsv()
-    
-    # UPDATING PROGRAM
-    #-----------------------------------------------
-    def update_program_record(self, updated_program):
-        file_path = "CSV Files/SSIS - PROGRAM.csv"
-        programs = []
-
-        # Read all programs
-        with open(file_path, "r", newline="", encoding="utf-8") as file:
-            reader = csv.reader(file)
-            programs = [row for row in reader]
-
-        # Update the program with the matching program code
-        for i, program in enumerate(programs):
-            if program[0] == updated_program[0]:  # Match program code
-                programs[i] = updated_program
-                break
-
-        # Save the updated list
-        with open(file_path, "w", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerows(programs)
-
-        QMessageBox.information(None, "Success", "Program added successfully! Click 'Update' to save changes.")
-        
-        self.programCsv()
-
-    # UPDATING COLLEGE
-    #-----------------------------------------------
-    def update_college_record(self, updated_college):
-        file_path = "CSV Files/SSIS - COLLEGE.csv"
-        colleges = []
-
-        # Read all programs
-        with open(file_path, "r", newline="", encoding="utf-8") as file:
-            reader = csv.reader(file)
-            colleges = [row for row in reader]
-
-        # Update the program with the matching program code
-        for i, college in enumerate(colleges):
-            if college[0] == updated_college[0]:  # Match program code
-                colleges[i] = updated_college
-                break
-
-        # Save the updated list
-        with open(file_path, "w", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerows(colleges)
-
-        QMessageBox.information(None, "Success", "College added successfully! Click 'Update' to save changes.")
-        
-        self.collegeCsv()
-
     '''=========================================================='''
     '''|                    ADDING ENTRY                        |'''
     '''=========================================================='''
@@ -1358,10 +1336,19 @@ class Display(QMainWindow):
             conn.commit()
 
             self.displayDatabase("studenttable")
+           
+            for row in range(self.model.rowCount()):
+                for col in range(self.model.columnCount()):
+                    item = self.model.item(row, col)
+                    if item:
+                        item.setData(item.text(), Qt.UserRole)
 
-            QMessageBox.information(None, "Success", "Student added successfully! Click 'Update' to save changes.")
+            
+            self.last_update_type = "Student"
 
-            self.updateButton.setVisible(True)
+            QMessageBox.information(None, "Success", "Student added successfully!")
+
+            self.updateButton.setVisible(False)
         except Exception as e:
             conn.rollback()
             QMessageBox.critical(None, "Error", f"Failed to add student:\n{str(e)}")
@@ -1390,9 +1377,17 @@ class Display(QMainWindow):
 
             self.displayDatabase("programtable")
 
-            QMessageBox.information(None, "Success", "Program added successfully! Click 'Update' to save changes.")
+            for row in range(self.model.rowCount()):
+                for col in range(self.model.columnCount()):
+                    item = self.model.item(row, col)
+                    if item:
+                        item.setData(item.text(), Qt.UserRole)
 
-            self.updateButton.setVisible(True)
+            self.last_update_type = "Program"
+
+            QMessageBox.information(None, "Success", "Program added successfully!")
+
+            self.updateButton.setVisible(False)
 
         except Exception as e:
             conn.rollback()
@@ -1429,9 +1424,17 @@ class Display(QMainWindow):
             
             self.displayDatabase("collegetable")
 
-            QMessageBox.information(None, "Success", "College added successfully! Click 'Update' to save changes.")
+            for row in range(self.model.rowCount()):
+                for col in range(self.model.columnCount()):
+                    item = self.model.item(row, col)
+                    if item:
+                        item.setData(item.text(), Qt.UserRole)
 
-            self.updateButton.setVisible(True)
+            self.last_update_type = "College"
+
+            QMessageBox.information(None, "Success", "College added successfully!")
+
+            self.updateButton.setVisible(False)
         except Exception as e:
             conn.rollback()
             QMessageBox.critical(None, "Error", f"Failed to add college:\n{str(e)}")
