@@ -5,7 +5,7 @@ class DatabaseManager:
         self.host = "127.0.0.1"
         self.port = 3306
         self.user = "root"
-        self.password = "eggyisback0525"
+        self.password = ""
         self.database = "ssis_database"
         self.cursor = None
 
@@ -18,3 +18,4 @@ class DatabaseManager:
             database=self.database
         )
         self.cursor = self.connection.cursor()
+
