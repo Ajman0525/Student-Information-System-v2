@@ -79,7 +79,7 @@ class Display(QMainWindow):
         # EDIT BUTTON
         # ------------------------------------------------
         EditButton(self)
-        self.editButton.clicked.connect(self.edit_student)
+        #self.editButton.clicked.connect(self.edit_student)
 
 
         # -------------------------------- #
