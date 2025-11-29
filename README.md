@@ -38,6 +38,37 @@ A desktop-based **Student Information System** built with **Python (PyQt5)** and
 
 * Proxy models used for search, filtering, and sorting
 ---
+### 📂 Project Structure
+
+```
+  StudentInformationSystem/
+  ├── Buttons/
+  │   ├── __init__.py     
+  │   ├── addButton.py
+  │   ├── editButton.py
+  │   ├── removeButton.py
+  │   └── updateButton.py
+  ├── Database_Manager/
+  │   └── database.py
+  ├── Images/
+  │   ├── ChickIcon.png
+  │   ├── header_rc.py
+  │   └── headerpic.qrc
+  ├── Popups/
+  │   ├── AddStudent.py
+  │   ├── AddProgram.py
+  │   └── AddCollege.py
+  ├── SearchBar/
+  │   ├── __init__.py
+  │   └── searchTab.py
+  ├── UI/
+  │   └── display.ui
+  ├── .gitignore
+  ├── main.py
+  └── README.md
+```
+
+---
 
 ## ⚙️ Installation & Setup
 
